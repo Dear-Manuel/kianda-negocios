@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+@theme {
+  /* Kianda palette — night indigo grounded in Kwanza gold, named for the
+     river spirit Kianda: the app is a quiet current your money moves through. */
+  --color-night: #101a33;
+  --color-surface: #182545;
+  --color-surface-light: #223059;
+  --color-line: #2c3a63;
+
+  --color-gold: #d4a24c;
+  --color-gold-soft: #e8c584;
+  --color-income: #3e9b7c;
+  --color-expense: #e8664f;
+
+  --color-cream: #f3eee3;
+  --color-muted: #96a0c2;
+
+  --font-display: "Fraunces", serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-night);
+  color: var(--color-cream);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* Signature element: the "anel" (ring) — a budget progress ring with a
+   dashed track to evoke woven capulana trim rather than a flat progress bar. */
+.anel-track {
+  stroke: var(--color-line);
+  fill: none;
+  stroke-width: 8;
+}
+.anel-progress {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  display: none;
+}

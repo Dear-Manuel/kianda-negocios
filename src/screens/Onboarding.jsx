@@ -1,59 +1,121 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash2, ArrowRight, ArrowLeft } from 'lucide-react';
 import { store } from '../lib/store';
 import { formatKz, parseAmountInput } from '../lib/currency';
 
 const STEPS = ['negocio', 'caixa', 'stock', 'resumo'];
+const DRAFT_KEY = 'kianda:onboarding_draft';
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveDraft(data) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+// Angola: números de telemóvel têm sempre 9 dígitos (ex: 923 456 789).
+function digitsOnly(v) {
+  return v.replace(/\D/g, '').slice(0, 9);
+}
+function formatPhoneDisplay(v) {
+  const d = digitsOnly(v);
+  return d.replace(/(\d{3})(\d{0,3})(\d{0,3})/, (_, a, b, c) => [a, b, c].filter(Boolean).join(' '));
+}
+
+const draft = loadDraft();
 
 export default function Onboarding({ onDone }) {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(draft?.step ?? 0);
 
-  const [ownerName, setOwnerName] = useState('');
-  const [businessName, setBusinessName] = useState('');
-  const [sector, setSector] = useState('');
-  const [phone, setPhone] = useState('');
+  const [ownerName, setOwnerName] = useState(draft?.ownerName ?? '');
+  const [businessName, setBusinessName] = useState(draft?.businessName ?? '');
+  const [sector, setSector] = useState(draft?.sector ?? '');
+  const [phone, setPhone] = useState(draft?.phone ?? '');
 
-  const [initialCash, setInitialCash] = useState('');
+  const [initialCash, setInitialCash] = useState(draft?.initialCash ?? '');
 
-  const [categories, setCategories] = useState([{ id: 'geral', name: 'Geral', color: '#d4a24c' }]);
-  const [stockItems, setStockItems] = useState([]);
-  const [itemForm, setItemForm] = useState({ categoryId: 'geral', name: '', quantity: '', purchasePrice: '', salePrice: '' });
+  const [categories, setCategories] = useState(draft?.categories ?? [{ id: 'geral', name: 'Geral', color: '#d4a24c' }]);
+  const [stockItems, setStockItems] = useState(draft?.stockItems ?? []);
+  const [itemForm, setItemForm] = useState({ categoryId: categories[0]?.id ?? 'geral', name: '', quantity: '', purchasePrice: '', salePrice: '' });
   const [newCategory, setNewCategory] = useState('');
+  const [catError, setCatError] = useState('');
+
+  // Guarda o progresso a cada alteração, para não se perder se a página for
+  // recarregada a meio do cadastro.
+  useEffect(() => {
+    saveDraft({ step, ownerName, businessName, sector, phone, initialCash, categories, stockItems });
+  }, [step, ownerName, businessName, sector, phone, initialCash, categories, stockItems]);
 
   const stockTotal = stockItems.reduce((s, i) => s + i.purchasePrice * i.quantity, 0);
   const cashValue = parseAmountInput(initialCash);
+  const phoneDigits = digitsOnly(phone);
+  const phoneValid = phoneDigits.length === 0 || phoneDigits.length === 9;
 
   function addCategory() {
     if (!newCategory.trim()) return;
+    const dup = categories.find((c) => c.name.trim().toLowerCase() === newCategory.trim().toLowerCase());
+    if (dup) {
+      setCatError(`A categoria "${dup.name}" já existe.`);
+      setItemForm((f) => ({ ...f, categoryId: dup.id }));
+      return;
+    }
     const palette = ['#e8664f', '#d4a24c', '#3e9b7c', '#8b7bd8', '#4a90c2', '#c26fa8'];
     const cat = { id: newCategory.toLowerCase().replace(/\s+/g, '_') + Date.now(), name: newCategory, color: palette[categories.length % palette.length] };
     setCategories([...categories, cat]);
     setItemForm((f) => ({ ...f, categoryId: cat.id }));
     setNewCategory('');
+    setCatError('');
   }
 
   function addStockItem() {
     if (!itemForm.name || !itemForm.quantity || !itemForm.purchasePrice) return;
-    setStockItems([...stockItems, {
-      ...itemForm,
-      quantity: Number(itemForm.quantity),
-      purchasePrice: parseAmountInput(itemForm.purchasePrice),
-      salePrice: parseAmountInput(itemForm.salePrice) || parseAmountInput(itemForm.purchasePrice),
-    }]);
+    const quantity = Number(itemForm.quantity);
+    const purchasePrice = parseAmountInput(itemForm.purchasePrice);
+    const salePrice = parseAmountInput(itemForm.salePrice) || purchasePrice;
+
+    // Se já existe uma linha para o mesmo produto na mesma categoria, soma a
+    // quantidade em vez de criar uma entrada duplicada.
+    const existingIdx = stockItems.findIndex(
+      (it) => it.categoryId === itemForm.categoryId && it.name.trim().toLowerCase() === itemForm.name.trim().toLowerCase()
+    );
+    if (existingIdx >= 0) {
+      const updated = [...stockItems];
+      updated[existingIdx] = {
+        ...updated[existingIdx],
+        quantity: updated[existingIdx].quantity + quantity,
+        purchasePrice, // usa o preço mais recente
+        salePrice,
+      };
+      setStockItems(updated);
+    } else {
+      setStockItems([...stockItems, { ...itemForm, quantity, purchasePrice, salePrice }]);
+    }
     setItemForm({ categoryId: itemForm.categoryId, name: '', quantity: '', purchasePrice: '', salePrice: '' });
   }
 
   function finish() {
-    // grava categorias criadas no onboarding
     for (const c of categories) store.addCategory(c);
     store.createBusiness({
       ownerName,
       businessName,
       sector,
-      phone,
+      phone: phoneDigits ? formatPhoneDisplay(phoneDigits) : '',
       initialCash: cashValue,
       initialStockItems: stockItems,
     });
+    clearDraft();
     onDone();
   }
 
@@ -76,7 +138,19 @@ export default function Onboarding({ onDone }) {
           <Field label="O teu nome" value={ownerName} onChange={setOwnerName} placeholder="Ex: Manuel dos Santos" />
           <Field label="Nome do negócio" value={businessName} onChange={setBusinessName} placeholder="Ex: Loja Kianda" />
           <Field label="Setor principal" value={sector} onChange={setSector} placeholder="Ex: Eletrónicos, Vestuário, Misto..." />
-          <Field label="Contacto (opcional)" value={phone} onChange={setPhone} placeholder="9XX XXX XXX" />
+
+          <label className="block text-xs text-muted mb-1.5">Contacto (opcional)</label>
+          <input
+            value={formatPhoneDisplay(phone)}
+            onChange={(e) => setPhone(digitsOnly(e.target.value))}
+            placeholder="9XX XXX XXX"
+            inputMode="numeric"
+            className="w-full bg-surface-light rounded-xl px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            style={{ boxShadow: !phoneValid ? '0 0 0 2px #e8664f' : undefined }}
+          />
+          {!phoneValid && (
+            <p className="text-xs text-expense mt-1.5">O número de telefone em Angola tem 9 dígitos.</p>
+          )}
         </div>
       )}
 
@@ -102,14 +176,18 @@ export default function Onboarding({ onDone }) {
           <h1 className="font-display text-3xl mb-1">Stock inicial</h1>
           <p className="text-sm text-muted mb-5">Já tens produtos para começar? Regista-os aqui (podes saltar e adicionar depois).</p>
 
-          <div className="flex gap-2 mb-4">
-            <input
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              placeholder="Nova categoria (ex: Eletrónicos)"
-              className="flex-1 bg-surface-light rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
-            />
-            <button onClick={addCategory} className="bg-surface-light px-3 rounded-lg text-gold text-sm">+</button>
+          <div className="mb-4">
+            <div className="flex gap-2">
+              <input
+                value={newCategory}
+                onChange={(e) => { setNewCategory(e.target.value); setCatError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+                placeholder="Nova categoria (ex: Eletrónicos)"
+                className="flex-1 bg-surface-light rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              />
+              <button onClick={addCategory} className="bg-surface-light px-3 rounded-lg text-gold text-sm">+</button>
+            </div>
+            {catError && <p className="text-xs text-expense mt-1.5">{catError}</p>}
           </div>
 
           <div className="flex gap-2 overflow-x-auto mb-4 -mx-1 px-1">
@@ -209,7 +287,7 @@ export default function Onboarding({ onDone }) {
         {step < STEPS.length - 1 ? (
           <button
             onClick={next}
-            disabled={step === 0 && (!ownerName || !businessName)}
+            disabled={(step === 0 && (!ownerName || !businessName || !phoneValid))}
             className="flex-1 bg-gold text-night font-semibold py-3.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"
           >
             {step === 2 && stockItems.length === 0 ? 'Saltar' : 'Continuar'} <ArrowRight size={16} />

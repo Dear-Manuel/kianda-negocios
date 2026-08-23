@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './lib/auth';
 import { store } from './lib/store';
 import { useLiveVersion } from './lib/useLiveVersion';
@@ -57,8 +58,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Package } from 'lucide-react';
+import { AlertTriangle, Package, PackagePlus } from 'lucide-react';
 import { store } from '../lib/store';
 import { formatKz } from '../lib/currency';
 import { useLiveVersion } from '../lib/useLiveVersion';
@@ -7,11 +7,13 @@ import ProductFormSheet from '../components/ProductFormSheet';
 import PurchaseSessionSheet from '../components/PurchaseSessionSheet';
 
 export default function Stock() {
-  useLiveVersion();
+  const version = useLiveVersion();
   const [showProductForm, setShowProductForm] = useState(false);
+  const [presetProduct, setPresetProduct] = useState(null);
   const [showPurchase, setShowPurchase] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const [showCatInput, setShowCatInput] = useState(false);
+  const [catError, setCatError] = useState('');
 
   const categories = store.getCategories();
   const products = store.getProducts();
@@ -23,15 +25,30 @@ export default function Stock() {
         .filter((p) => p.categoryId === c.id)
         .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) })),
     })).filter((c) => c.items.length > 0);
-  }, [categories, products]);
+  }, [categories, products, version]);
 
   const totalStockValue = store.totalStockValue();
 
   function addCategory() {
     if (!newCategory.trim()) return;
+    const existing = store.findCategoryByName(newCategory);
+    if (existing) {
+      setCatError(`A categoria "${existing.name}" já existe.`);
+      return;
+    }
     store.addCategory({ name: newCategory });
     setNewCategory('');
+    setCatError('');
     setShowCatInput(false);
+  }
+
+  function openAddStock(product) {
+    setPresetProduct(product);
+    setShowProductForm(true);
+  }
+  function closeProductForm() {
+    setShowProductForm(false);
+    setPresetProduct(null);
   }
 
   return (
@@ -51,16 +68,19 @@ export default function Stock() {
       </div>
 
       {showCatInput ? (
-        <div className="flex gap-2 mb-5">
-          <input
-            autoFocus
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addCategory()}
-            placeholder="Nome da categoria"
-            className="flex-1 bg-surface-light rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
-          />
-          <button onClick={addCategory} className="bg-gold text-night px-3 rounded-lg text-xs font-medium">Criar</button>
+        <div className="mb-5">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              value={newCategory}
+              onChange={(e) => { setNewCategory(e.target.value); setCatError(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+              placeholder="Nome da categoria"
+              className="flex-1 bg-surface-light rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            />
+            <button onClick={addCategory} className="bg-gold text-night px-3 rounded-lg text-xs font-medium">Criar</button>
+          </div>
+          {catError && <p className="text-xs text-expense mt-1.5">{catError}</p>}
         </div>
       ) : (
         <button onClick={() => setShowCatInput(true)} className="text-xs text-gold mb-5">+ Nova categoria</button>
@@ -90,15 +110,24 @@ export default function Stock() {
                       <p className="text-xs text-muted">{formatKz(p.salePrice)} / {p.unit}</p>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-sm font-mono tabular font-medium ${low ? 'text-expense' : 'text-cream'}`}>
-                      {p.stock} {p.unit}{p.stock !== 1 ? 's' : ''}
-                    </p>
-                    {low && (
-                      <p className="text-[10px] text-expense flex items-center gap-0.5 justify-end">
-                        <AlertTriangle size={10} /> stock baixo
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <p className={`text-sm font-mono tabular font-medium ${low ? 'text-expense' : 'text-cream'}`}>
+                        {p.stock} {p.unit}{p.stock !== 1 ? 's' : ''}
                       </p>
-                    )}
+                      {low && (
+                        <p className="text-[10px] text-expense flex items-center gap-0.5 justify-end">
+                          <AlertTriangle size={10} /> stock baixo
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => openAddStock(p)}
+                      aria-label={`Aumentar stock de ${p.name}`}
+                      className="w-8 h-8 rounded-full bg-surface-light flex items-center justify-center shrink-0"
+                    >
+                      <PackagePlus size={15} color="#d4a24c" />
+                    </button>
                   </div>
                 </div>
               );
@@ -108,7 +137,7 @@ export default function Stock() {
       ))}
 
       {showProductForm && (
-        <ProductFormSheet onClose={() => setShowProductForm(false)} onSaved={() => setShowProductForm(false)} />
+        <ProductFormSheet presetProduct={presetProduct} onClose={closeProductForm} onSaved={closeProductForm} />
       )}
       {showPurchase && (
         <PurchaseSessionSheet onClose={() => setShowPurchase(false)} onSaved={() => setShowPurchase(false)} />

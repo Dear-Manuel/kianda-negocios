@@ -102,7 +102,12 @@ export const store = {
   getCategories() {
     return read(KEYS.categories, []);
   },
+  findCategoryByName(name) {
+    return read(KEYS.categories, []).find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+  },
   addCategory({ name, color }) {
+    const existing = this.findCategoryByName(name);
+    if (existing) return existing;
     const list = read(KEYS.categories, []);
     const record = { id: uid(), name, color: color || randomColor() };
     list.push(record);
@@ -117,7 +122,16 @@ export const store = {
   getProducts() {
     return read(KEYS.products, []);
   },
+  findProduct(name, categoryId) {
+    return read(KEYS.products, []).find(
+      (p) => p.categoryId === categoryId && p.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+  },
+  // Cria o produto só se ainda não existir nessa categoria (por nome).
+  // Se já existir, devolve o produto existente em vez de duplicar.
   addProduct({ categoryId, name, unit, salePrice, lowStockThreshold }) {
+    const existing = this.findProduct(name, categoryId);
+    if (existing) return existing;
     const list = read(KEYS.products, []);
     const record = {
       id: uid(),

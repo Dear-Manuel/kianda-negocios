@@ -1,16 +1,21 @@
 import { useMemo, useState } from 'react';
-import { X, TrendingUp, AlertTriangle } from 'lucide-react';
+import { X, TrendingUp, AlertTriangle, PackagePlus } from 'lucide-react';
 import { store } from '../lib/store';
 import { formatKz, parseAmountInput } from '../lib/currency';
 
-export default function ProductFormSheet({ onClose, onSaved }) {
+export default function ProductFormSheet({ onClose, onSaved, presetProduct }) {
   const categories = store.getCategories();
-  const [categoryId, setCategoryId] = useState(categories[0]?.id);
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState('unidade');
+  const [categoryId, setCategoryId] = useState(presetProduct?.categoryId ?? categories[0]?.id);
+  const [name, setName] = useState(presetProduct?.name ?? '');
+  const [unit, setUnit] = useState(presetProduct?.unit ?? 'unidade');
   const [quantity, setQuantity] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
+
+  const existingProduct = useMemo(
+    () => (name.trim() ? store.findProduct(name, categoryId) : null),
+    [name, categoryId]
+  );
 
   const margin = useMemo(() => {
     const buy = parseAmountInput(purchasePrice);
@@ -43,7 +48,7 @@ export default function ProductFormSheet({ onClose, onSaved }) {
     <div className="fixed inset-0 z-50 flex items-end bg-black/50" onClick={onClose}>
       <div className="w-full max-w-md mx-auto bg-surface rounded-t-3xl p-5 pb-8 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-5">
-          <h2 className="font-display text-xl">Novo produto</h2>
+          <h2 className="font-display text-xl">{existingProduct ? 'Adicionar stock' : 'Novo produto'}</h2>
           <button onClick={onClose} className="text-muted p-1"><X size={22} /></button>
         </div>
 
@@ -74,6 +79,15 @@ export default function ProductFormSheet({ onClose, onSaved }) {
           autoFocus
           className="w-full bg-surface-light rounded-xl px-4 py-3 mb-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
         />
+
+        {existingProduct && (
+          <div className="rounded-xl p-3 mb-4 border border-gold/40 bg-gold/10 flex gap-2 items-start">
+            <PackagePlus size={16} color="#d4a24c" className="shrink-0 mt-0.5" />
+            <p className="text-xs text-gold">
+              Já existe "{existingProduct.name}" nesta categoria — isto vai adicionar um novo lote de stock a ele (não cria um produto duplicado). Tinha {store.stockOf(existingProduct.id)} {existingProduct.unit}(s) antes desta entrada.
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-3 mb-4">
           <div className="flex-1">
@@ -158,7 +172,7 @@ export default function ProductFormSheet({ onClose, onSaved }) {
           disabled={!name || !purchasePrice}
           className="w-full bg-gold text-night font-semibold py-3.5 rounded-xl text-sm disabled:opacity-40"
         >
-          Guardar produto
+          {existingProduct ? 'Adicionar stock' : 'Guardar produto'}
         </button>
       </div>
     </div>

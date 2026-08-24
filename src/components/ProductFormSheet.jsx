@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
 import { store } from '../lib/store';
-import { parseAmountInput } from '../lib/currency';
+import CategoryPickerSheet from './CategoryPickerSheet';
 
-// Ficha mestre do produto — só identidade e preço de venda sugerido.
-// O stock (quantidade, custo) entra depois via StockMovementSheet, porque
-// o custo muda a cada compra e não é uma propriedade fixa do produto.
+// Ficha mestre do produto — só identidade: categoria, nome, unidade e
+// alerta de stock mínimo. Sem preço nenhum aqui: o preço de compra entra
+// quando adicionas stock (StockMovementSheet), porque o custo muda a cada
+// compra e não é uma propriedade fixa do produto.
 export default function ProductFormSheet({ onClose, onSaved }) {
   const categories = store.getCategories();
-  const [categoryId, setCategoryId] = useState(categories[0]?.id);
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('unidade');
-  const [salePrice, setSalePrice] = useState('');
   const [lowStockThreshold, setLowStockThreshold] = useState('3');
 
-  const existingProduct = name.trim() ? store.findProduct(name, categoryId) : null;
+  const selectedCategory = categories.find((c) => c.id === categoryId);
+  const existingProduct = name.trim() && categoryId ? store.findProduct(name, categoryId) : null;
 
   function handleSave() {
     if (!name || !categoryId) return;
@@ -22,7 +24,7 @@ export default function ProductFormSheet({ onClose, onSaved }) {
       categoryId,
       name,
       unit,
-      salePrice: parseAmountInput(salePrice),
+      salePrice: 0,
       lowStockThreshold: Number(lowStockThreshold) || 3,
     });
     onSaved();
@@ -41,22 +43,22 @@ export default function ProductFormSheet({ onClose, onSaved }) {
         ) : (
           <>
             <label className="block text-xs text-muted mb-1.5">Categoria</label>
-            <div className="flex gap-2 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
-              {categories.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setCategoryId(c.id)}
-                  className="shrink-0 px-3.5 py-2 rounded-full text-xs font-medium border"
-                  style={{
-                    borderColor: categoryId === c.id ? c.color : '#2c3a63',
-                    background: categoryId === c.id ? `${c.color}22` : 'transparent',
-                    color: categoryId === c.id ? c.color : '#96a0c2',
-                  }}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => setShowCategoryPicker(true)}
+              className="w-full flex items-center justify-between bg-surface-light rounded-xl px-4 py-3 mb-4 text-sm"
+            >
+              <span className="flex items-center gap-2.5">
+                {selectedCategory ? (
+                  <>
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ background: selectedCategory.color }} />
+                    <span>{selectedCategory.name}</span>
+                  </>
+                ) : (
+                  <span className="text-muted">Selecionar categoria</span>
+                )}
+              </span>
+              <ChevronDown size={16} className="text-muted" />
+            </button>
 
             <label className="block text-xs text-muted mb-1.5">Nome do produto</label>
             <input
@@ -71,7 +73,7 @@ export default function ProductFormSheet({ onClose, onSaved }) {
             )}
             {!existingProduct && <div className="mb-4" />}
 
-            <div className="flex gap-3 mb-4">
+            <div className="flex gap-3 mb-6">
               <div className="flex-1">
                 <label className="block text-xs text-muted mb-1.5">Unidade</label>
                 <select
@@ -98,16 +100,6 @@ export default function ProductFormSheet({ onClose, onSaved }) {
               </div>
             </div>
 
-            <label className="block text-xs text-muted mb-1.5">Preço de venda (Kz)</label>
-            <input
-              inputMode="decimal"
-              value={salePrice}
-              onChange={(e) => setSalePrice(e.target.value)}
-              placeholder="0,00"
-              className="w-full bg-surface-light rounded-xl px-4 py-3 mb-2 text-xl font-mono tabular outline-none focus-visible:ring-2 focus-visible:ring-gold"
-            />
-            <p className="text-xs text-muted mb-5">Podes ajustar isto (e ver a margem de lucro) quando adicionares stock a este produto.</p>
-
             <button
               onClick={handleSave}
               disabled={!name || !categoryId}
@@ -116,6 +108,14 @@ export default function ProductFormSheet({ onClose, onSaved }) {
               Criar produto
             </button>
           </>
+        )}
+
+        {showCategoryPicker && (
+          <CategoryPickerSheet
+            selectedId={categoryId}
+            onSelect={(id) => { setCategoryId(id); setShowCategoryPicker(false); }}
+            onClose={() => setShowCategoryPicker(false)}
+          />
         )}
       </div>
     </div>

@@ -47,9 +47,22 @@ create table if not exists batches (
   quantity numeric not null,
   quantity_remaining numeric not null,
   purchase_date date not null,
-  source text default 'compra', -- 'compra' | 'stock_inicial'
+  source text default 'compra', -- 'compra' | 'stock_inicial' | 'ajuste'
   purchase_session_id text,
   supplier_id text,
+  created_at timestamptz default now()
+);
+
+-- Kardex — histórico completo de entradas e saídas por produto
+create table if not exists stock_movements (
+  id text primary key,
+  user_id uuid references auth.users not null,
+  product_id text references products(id) not null,
+  type text not null, -- 'compra' | 'stock_inicial' | 'ajuste_entrada' | 'ajuste_saida' | 'venda' | 'estorno_venda'
+  quantity numeric not null,
+  date date not null,
+  note text,
+  related_id text,
   created_at timestamptz default now()
 );
 
@@ -169,6 +182,7 @@ alter table businesses enable row level security;
 alter table categories enable row level security;
 alter table products enable row level security;
 alter table batches enable row level security;
+alter table stock_movements enable row level security;
 alter table purchase_sessions enable row level security;
 alter table sales enable row level security;
 alter table sale_batch_consumptions enable row level security;
@@ -183,6 +197,7 @@ create policy "own_businesses" on businesses for all using (auth.uid() = user_id
 create policy "own_categories" on categories for all using (auth.uid() = user_id);
 create policy "own_products" on products for all using (auth.uid() = user_id);
 create policy "own_batches" on batches for all using (auth.uid() = user_id);
+create policy "own_stock_movements" on stock_movements for all using (auth.uid() = user_id);
 create policy "own_purchase_sessions" on purchase_sessions for all using (auth.uid() = user_id);
 create policy "own_sales" on sales for all using (auth.uid() = user_id);
 create policy "own_sale_batch_consumptions" on sale_batch_consumptions for all using (auth.uid() = user_id);

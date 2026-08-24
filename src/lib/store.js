@@ -9,6 +9,7 @@ const KEYS = {
   categories: 'kianda:categories',
   products: 'kianda:products',
   batches: 'kianda:batches',
+  stockMovements: 'kianda:stockMovements',
   purchaseSessions: 'kianda:purchaseSessions',
   sales: 'kianda:sales',
   saleConsumptions: 'kianda:saleConsumptions',
@@ -49,8 +50,10 @@ export const store = {
     return Boolean(read(KEYS.business, null));
   },
 
-  // onboarding: cria o negócio + capital inicial (caixa + stock opcional)
-  createBusiness({ ownerName, businessName, sector, phone, initialCash, initialStockItems }) {
+  // onboarding: cria o negócio + capital inicial em caixa.
+  // O stock é construído depois, no separador Stock (produto + movimentos),
+  // não faz parte do cadastro inicial.
+  createBusiness({ ownerName, businessName, sector, phone, initialCash }) {
     const business = {
       id: uid(),
       ownerName,
@@ -70,23 +73,6 @@ export const store = {
         amount: business.initialCash,
         description: 'Capital inicial em caixa',
         date: today(),
-      });
-    }
-
-    // Regista itens de stock inicial (cada um vira um produto + lote "stock_inicial")
-    for (const item of initialStockItems || []) {
-      const product = this.addProduct({
-        categoryId: item.categoryId,
-        name: item.name,
-        unit: item.unit || 'unidade',
-        salePrice: item.salePrice,
-      });
-      this.addBatch({
-        productId: product.id,
-        purchasePrice: item.purchasePrice,
-        quantity: item.quantity,
-        purchaseDate: today(),
-        source: 'stock_inicial',
       });
     }
 
@@ -164,7 +150,7 @@ export const store = {
     const all = read(KEYS.batches, []);
     return productId ? all.filter((b) => b.productId === productId) : all;
   },
-  addBatch({ productId, purchasePrice, quantity, purchaseDate, source, purchaseSessionId, supplierId }) {
+  addBatch({ productId, purchasePrice, quantity, purchaseDate, source, purchaseSessionId, supplierId, note }) {
     const list = read(KEYS.batches, []);
     const record = {
       id: uid(),
@@ -179,6 +165,15 @@ export const store = {
     };
     list.push(record);
     write(KEYS.batches, list);
+
+    this.logMovement({
+      productId,
+      type: source === 'ajuste' ? 'ajuste_entrada' : source === 'stock_inicial' ? 'stock_inicial' : 'compra',
+      quantity: record.quantity,
+      date: record.purchaseDate,
+      note,
+    });
+
     return record;
   },
   stockOf(productId) {
@@ -194,6 +189,43 @@ export const store = {
   lastPurchasePrice(productId) {
     const batches = this.getBatches(productId).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate));
     return batches[0]?.purchasePrice ?? 0;
+  },
+
+  // ================= MOVIMENTOS DE STOCK (kardex) =================
+  // Histórico completo de tudo o que entra e sai de cada produto —
+  // compras, ajustes (perdas, danos, contagem), devoluções e vendas.
+  getStockMovements(productId) {
+    const all = read(KEYS.stockMovements, []).sort((a, b) => new Date(b.date) - new Date(a.date) || b.createdAt.localeCompare(a.createdAt));
+    return productId ? all.filter((m) => m.productId === productId) : all;
+  },
+  logMovement({ productId, type, quantity, date, note, relatedId }) {
+    const list = read(KEYS.stockMovements, []);
+    list.push({
+      id: uid(),
+      productId,
+      type, // 'compra' | 'stock_inicial' | 'ajuste_entrada' | 'ajuste_saida' | 'venda' | 'estorno_venda'
+      quantity,
+      date: date || today(),
+      note: note || '',
+      relatedId: relatedId || null,
+      createdAt: new Date().toISOString(),
+    });
+    write(KEYS.stockMovements, list);
+  },
+
+  // Ajuste manual de stock — para corrigir contagem física, registar
+  // perdas, danos ou quebras. Não mexe no caixa (não é compra nem venda).
+  adjustStock({ productId, quantityDelta, reason, date }) {
+    const delta = Number(quantityDelta);
+    if (!delta) return;
+    if (delta > 0) {
+      // entrada: cria um lote ao custo do último lote conhecido (ou 0)
+      const cost = this.lastPurchasePrice(productId);
+      this.addBatch({ productId, purchasePrice: cost, quantity: delta, purchaseDate: date, source: 'ajuste', note: reason });
+    } else {
+      const { shortfall } = this.consumeFifo(productId, Math.abs(delta));
+      this.logMovement({ productId, type: 'ajuste_saida', quantity: Math.abs(delta) - shortfall, date, note: reason });
+    }
   },
 
   // ================= COMPRAS (sessão "dia de compra") =================
@@ -313,6 +345,8 @@ export const store = {
     }
     write(KEYS.saleConsumptions, consList);
 
+    this.logMovement({ productId, type: 'venda', quantity: qty, date: sale.date, relatedId: sale.id });
+
     if (isOnCredit && customerId) {
       this.addCustomerDebt({
         customerId,
@@ -336,6 +370,7 @@ export const store = {
   },
   deleteSale(id) {
     // devolve as quantidades aos lotes
+    const sale = read(KEYS.sales, []).find((s) => s.id === id);
     const consumptions = read(KEYS.saleConsumptions, []).filter((c) => c.saleId === id);
     const batches = read(KEYS.batches, []);
     for (const c of consumptions) {
@@ -346,6 +381,9 @@ export const store = {
     write(KEYS.saleConsumptions, read(KEYS.saleConsumptions, []).filter((c) => c.saleId !== id));
     write(KEYS.sales, read(KEYS.sales, []).filter((s) => s.id !== id));
     write(KEYS.cashTransactions, read(KEYS.cashTransactions, []).filter((t) => t.relatedId !== id));
+    if (sale) {
+      this.logMovement({ productId: sale.productId, type: 'estorno_venda', quantity: sale.quantity, date: today(), relatedId: id });
+    }
   },
 
   // ================= CAIXA =================
@@ -509,7 +547,7 @@ export const store = {
   initialCapital() {
     const business = this.getBusiness();
     if (!business) return 0;
-    return business.initialCash + this.initialStockValue();
+    return business.initialCash;
   },
   growthSinceStart() {
     return this.netWorth() - this.initialCapital();

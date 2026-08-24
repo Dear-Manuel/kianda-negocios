@@ -5,12 +5,15 @@ import { formatKz } from '../lib/currency';
 import { useLiveVersion } from '../lib/useLiveVersion';
 import ProductFormSheet from '../components/ProductFormSheet';
 import PurchaseSessionSheet from '../components/PurchaseSessionSheet';
+import StockMovementSheet from '../components/StockMovementSheet';
+import StockHistorySheet from '../components/StockHistorySheet';
 
 export default function Stock() {
   const version = useLiveVersion();
   const [showProductForm, setShowProductForm] = useState(false);
-  const [presetProduct, setPresetProduct] = useState(null);
   const [showPurchase, setShowPurchase] = useState(false);
+  const [movementProduct, setMovementProduct] = useState(null);
+  const [historyProduct, setHistoryProduct] = useState(null);
   const [newCategory, setNewCategory] = useState('');
   const [showCatInput, setShowCatInput] = useState(false);
   const [catError, setCatError] = useState('');
@@ -26,8 +29,6 @@ export default function Stock() {
         .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) })),
     })).filter((c) => c.items.length > 0);
 
-    // Rede de segurança: produtos cuja categoria não existe (nunca deveria
-    // acontecer, mas se acontecer não devem desaparecer silenciosamente).
     const knownIds = new Set(categories.map((c) => c.id));
     const orphanItems = products
       .filter((p) => !knownIds.has(p.categoryId))
@@ -51,15 +52,6 @@ export default function Stock() {
     setNewCategory('');
     setCatError('');
     setShowCatInput(false);
-  }
-
-  function openAddStock(product) {
-    setPresetProduct(product);
-    setShowProductForm(true);
-  }
-  function closeProductForm() {
-    setShowProductForm(false);
-    setPresetProduct(null);
   }
 
   return (
@@ -98,7 +90,7 @@ export default function Stock() {
       )}
 
       {grouped.length === 0 && (
-        <p className="text-sm text-muted py-12 text-center">Ainda não tens produtos. Toca em "Novo produto" para começar.</p>
+        <p className="text-sm text-muted py-12 text-center">Ainda não tens produtos. Cria uma categoria e depois toca em "Novo produto" para começar.</p>
       )}
 
       {grouped.map((cat) => (
@@ -112,7 +104,7 @@ export default function Stock() {
               const low = p.stock <= (p.lowStockThreshold ?? 3);
               return (
                 <div key={p.id} className="flex items-center justify-between bg-surface rounded-xl px-4 py-3 border border-line">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <button onClick={() => setHistoryProduct(p)} className="flex items-center gap-3 min-w-0 text-left flex-1">
                     <div className="w-9 h-9 rounded-lg bg-surface-light flex items-center justify-center shrink-0">
                       <Package size={16} color={cat.color} />
                     </div>
@@ -120,7 +112,7 @@ export default function Stock() {
                       <p className="text-sm font-medium truncate">{p.name}</p>
                       <p className="text-xs text-muted">{formatKz(p.salePrice)} / {p.unit}</p>
                     </div>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="text-right">
                       <p className={`text-sm font-mono tabular font-medium ${low ? 'text-expense' : 'text-cream'}`}>
@@ -133,8 +125,8 @@ export default function Stock() {
                       )}
                     </div>
                     <button
-                      onClick={() => openAddStock(p)}
-                      aria-label={`Aumentar stock de ${p.name}`}
+                      onClick={() => setMovementProduct(p)}
+                      aria-label={`Movimentar stock de ${p.name}`}
                       className="w-8 h-8 rounded-full bg-surface-light flex items-center justify-center shrink-0"
                     >
                       <PackagePlus size={15} color="#d4a24c" />
@@ -148,10 +140,16 @@ export default function Stock() {
       ))}
 
       {showProductForm && (
-        <ProductFormSheet presetProduct={presetProduct} onClose={closeProductForm} onSaved={closeProductForm} />
+        <ProductFormSheet onClose={() => setShowProductForm(false)} onSaved={() => setShowProductForm(false)} />
       )}
       {showPurchase && (
         <PurchaseSessionSheet onClose={() => setShowPurchase(false)} onSaved={() => setShowPurchase(false)} />
+      )}
+      {movementProduct && (
+        <StockMovementSheet product={movementProduct} onClose={() => setMovementProduct(null)} onSaved={() => setMovementProduct(null)} />
+      )}
+      {historyProduct && (
+        <StockHistorySheet product={historyProduct} onClose={() => setHistoryProduct(null)} />
       )}
     </div>
   );

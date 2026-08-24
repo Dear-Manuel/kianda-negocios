@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Plus, Check, Trash2, BellRing } from 'lucide-react';
+import { Plus, Check, Trash2, BellRing, HandCoins } from 'lucide-react';
 import { store } from '../lib/store';
 import { useLiveVersion } from '../lib/useLiveVersion';
+
+const LINK_LABELS = {
+  divida_cliente: 'Dívida de cliente',
+  divida_fornecedor: 'Dívida a fornecedor',
+};
 
 export default function Lembretes() {
   const version = useLiveVersion();
@@ -33,7 +38,7 @@ export default function Lembretes() {
         </button>
       </div>
 
-      <p className="text-xs text-muted mb-4">Vencimentos de dívidas, dias de abastecer stock, ou qualquer coisa importante.</p>
+      <p className="text-xs text-muted mb-4">Vencimentos de dívidas, dias de abastecer stock, ou qualquer coisa importante. Lembretes ligados a dívidas são criados automaticamente.</p>
 
       {showForm && (
         <div className="bg-surface rounded-xl p-4 border border-line mb-5 space-y-3">
@@ -69,6 +74,11 @@ export default function Lembretes() {
                 {new Date(r.datetime).toLocaleString('pt-AO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 {r.repeat !== 'nenhuma' && ` · ${r.repeat}`}
               </p>
+              {r.relatedType && (
+                <p className="text-[10px] text-gold flex items-center gap-1 mt-0.5">
+                  <HandCoins size={10} /> {LINK_LABELS[r.relatedType] || r.relatedType}
+                </p>
+              )}
             </div>
             <button onClick={() => store.deleteReminder(r.id)} className="text-muted p-1"><Trash2 size={16} /></button>
           </div>

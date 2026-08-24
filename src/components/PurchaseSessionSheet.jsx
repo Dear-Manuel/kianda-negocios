@@ -5,6 +5,7 @@ import { formatKz, parseAmountInput } from '../lib/currency';
 
 export default function PurchaseSessionSheet({ onClose, onSaved }) {
   const products = store.getProducts();
+  const suppliers = store.getSuppliers();
   const [date, setDate] = useState(today());
   const [items, setItems] = useState([]);
   const [productId, setProductId] = useState(products[0]?.id || '');
@@ -14,6 +15,11 @@ export default function PurchaseSessionSheet({ onClose, onSaved }) {
   const [foodCost, setFoodCost] = useState('');
   const [otherCost, setOtherCost] = useState('');
   const [notes, setNotes] = useState('');
+
+  const [paymentMethod, setPaymentMethod] = useState('vista');
+  const [supplierId, setSupplierId] = useState('');
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [dueDate, setDueDate] = useState('');
 
   function selectProduct(id) {
     setProductId(id);
@@ -37,6 +43,13 @@ export default function PurchaseSessionSheet({ onClose, onSaved }) {
 
   function handleSave() {
     if (items.length === 0) return;
+
+    let finalSupplierId = supplierId;
+    if (paymentMethod === 'credito' && !finalSupplierId && newSupplierName) {
+      const s = store.addSupplier({ name: newSupplierName });
+      finalSupplierId = s.id;
+    }
+
     store.createPurchaseSession({
       date,
       notes,
@@ -44,9 +57,14 @@ export default function PurchaseSessionSheet({ onClose, onSaved }) {
       foodCost: parseAmountInput(foodCost),
       otherCost: parseAmountInput(otherCost),
       items,
+      paymentMethod,
+      supplierId: paymentMethod === 'credito' ? finalSupplierId : (supplierId || null),
+      dueDate: paymentMethod === 'credito' ? (dueDate || null) : null,
     });
     onSaved();
   }
+
+  const canSave = items.length > 0 && (paymentMethod === 'vista' || supplierId || newSupplierName);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/50" onClick={onClose}>
@@ -106,7 +124,46 @@ export default function PurchaseSessionSheet({ onClose, onSaved }) {
           </div>
         )}
 
-        <h3 className="text-xs font-medium text-muted mb-2">Despesas desta saída (não entram no custo do produto)</h3>
+        <h3 className="text-xs font-medium text-muted mb-2">Pagamento dos produtos</h3>
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setPaymentMethod('vista')}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium"
+            style={{ background: paymentMethod === 'vista' ? '#3e9b7c' : '#223059', color: paymentMethod === 'vista' ? '#101a33' : '#96a0c2' }}
+          >
+            À vista (sai do caixa)
+          </button>
+          <button
+            onClick={() => setPaymentMethod('credito')}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium"
+            style={{ background: paymentMethod === 'credito' ? '#d4a24c' : '#223059', color: paymentMethod === 'credito' ? '#101a33' : '#96a0c2' }}
+          >
+            A crédito (fica a dever)
+          </button>
+        </div>
+
+        {paymentMethod === 'credito' && (
+          <div className="bg-surface-light rounded-xl p-3.5 mb-4 space-y-2.5">
+            <label className="block text-xs text-muted">Fornecedor</label>
+            {suppliers.length > 0 && (
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
+                className="w-full bg-surface rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                <option value="">Novo fornecedor...</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            )}
+            {!supplierId && (
+              <input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="Nome do fornecedor"
+                className="w-full bg-surface rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+            )}
+            <label className="block text-xs text-muted">Prazo de pagamento (opcional)</label>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+              className="w-full bg-surface rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+            {dueDate && <p className="text-[11px] text-gold">Um lembrete de pagamento é criado automaticamente.</p>}
+          </div>
+        )}
+
+        <h3 className="text-xs font-medium text-muted mb-2">Despesas desta saída (sempre à vista, não entram no custo do produto)</h3>
         <div className="grid grid-cols-3 gap-2 mb-4">
           <MiniInput label="Transporte" value={transportCost} onChange={setTransportCost} />
           <MiniInput label="Alimentação" value={foodCost} onChange={setFoodCost} />
@@ -118,12 +175,13 @@ export default function PurchaseSessionSheet({ onClose, onSaved }) {
 
         <div className="bg-surface-light rounded-xl p-4 mb-5 space-y-1.5">
           <Row label="Produtos" value={formatKz(itemsTotal)} />
-          <Row label="Despesas da saída" value={formatKz(extraTotal)} />
+          <Row label={paymentMethod === 'credito' ? 'Vira dívida ao fornecedor' : 'Despesas da saída'} value={formatKz(paymentMethod === 'credito' ? itemsTotal : extraTotal)} />
+          {paymentMethod === 'credito' && <Row label="Despesas da saída (à vista)" value={formatKz(extraTotal)} />}
           <div className="h-px bg-line my-1" />
-          <Row label="Total sai do caixa" value={formatKz(itemsTotal + extraTotal)} bold />
+          <Row label="Sai do caixa agora" value={formatKz(paymentMethod === 'credito' ? extraTotal : itemsTotal + extraTotal)} bold />
         </div>
 
-        <button onClick={handleSave} disabled={items.length === 0}
+        <button onClick={handleSave} disabled={!canSave}
           className="w-full bg-gold text-night font-semibold py-3.5 rounded-xl text-sm disabled:opacity-40">
           Guardar compra
         </button>

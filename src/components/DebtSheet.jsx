@@ -64,7 +64,9 @@ export default function DebtSheet({ mode, onClose, onSaved }) {
 
         <label className="block text-xs text-muted mb-1.5">Prazo (opcional)</label>
         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-          className="w-full bg-surface-light rounded-xl px-4 py-3 mb-6 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+          className="w-full bg-surface-light rounded-xl px-4 py-3 mb-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+        {dueDate && <p className="text-xs text-gold mb-4">Um lembrete é criado automaticamente para essa data.</p>}
+        {!dueDate && <div className="mb-6" />}
 
         <button onClick={handleSave} disabled={!amount || (!personId && !newName)}
           className="w-full bg-gold text-night font-semibold py-3.5 rounded-xl text-sm disabled:opacity-40">

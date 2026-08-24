@@ -233,7 +233,8 @@ export const store = {
     return read(KEYS.purchaseSessions, []).sort((a, b) => new Date(b.date) - new Date(a.date));
   },
   // items: [{ productId (ou newProduct: {categoryId,name,unit,salePrice}), purchasePrice, quantity }]
-  createPurchaseSession({ date, notes, transportCost, foodCost, otherCost, items }) {
+  // paymentMethod: 'vista' (sai do caixa na hora) | 'credito' (vira dívida ao fornecedor)
+  createPurchaseSession({ date, notes, transportCost, foodCost, otherCost, items, paymentMethod, supplierId, dueDate }) {
     const session = {
       id: uid(),
       date: date || today(),
@@ -241,6 +242,8 @@ export const store = {
       transportCost: Number(transportCost) || 0,
       foodCost: Number(foodCost) || 0,
       otherCost: Number(otherCost) || 0,
+      paymentMethod: paymentMethod || 'vista',
+      supplierId: supplierId || null,
       createdAt: new Date().toISOString(),
     };
     const list = read(KEYS.purchaseSessions, []);
@@ -261,20 +264,34 @@ export const store = {
         purchaseDate: session.date,
         source: 'compra',
         purchaseSessionId: session.id,
+        supplierId: session.supplierId,
       });
       productsTotal += item.purchasePrice * item.quantity;
     }
 
     if (productsTotal > 0) {
-      this.addCashTransaction({
-        type: 'saida',
-        category: 'compra_stock',
-        amount: productsTotal,
-        description: `Compra de stock (${items.length} item${items.length > 1 ? 's' : ''})`,
-        date: session.date,
-        relatedId: session.id,
-      });
+      if (session.paymentMethod === 'credito' && session.supplierId) {
+        // Compra a crédito: não sai do caixa agora — vira dívida ao fornecedor.
+        this.addSupplierDebt({
+          supplierId: session.supplierId,
+          amount: productsTotal,
+          description: `Compra de stock (${items.length} item${items.length > 1 ? 's' : ''})`,
+          dueDate: dueDate || null,
+          date: session.date,
+        });
+      } else {
+        this.addCashTransaction({
+          type: 'saida',
+          category: 'compra_stock',
+          amount: productsTotal,
+          description: `Compra de stock (${items.length} item${items.length > 1 ? 's' : ''})`,
+          date: session.date,
+          relatedId: session.id,
+        });
+      }
     }
+    // As despesas da saída (transporte/alimentação/outras) são sempre pagas
+    // na hora — saem do caixa mesmo que a compra de stock seja a crédito.
     const extra = session.transportCost + session.foodCost + session.otherCost;
     if (extra > 0) {
       this.addCashTransaction({
@@ -443,6 +460,17 @@ export const store = {
     };
     list.push(record);
     write(KEYS.customerDebts, list);
+
+    if (record.dueDate) {
+      const customer = this.getCustomers().find((c) => c.id === customerId);
+      this.addReminder({
+        title: `Cobrar dívida de ${customer?.name || 'cliente'}`,
+        datetime: `${record.dueDate}T09:00`,
+        repeat: 'nenhuma',
+        relatedType: 'divida_cliente',
+        relatedId: record.id,
+      });
+    }
     return record;
   },
   registerCustomerPayment(debtId, amount) {
@@ -450,6 +478,7 @@ export const store = {
     const idx = list.findIndex((d) => d.id === debtId);
     if (idx < 0) return;
     list[idx].amountPaid += Number(amount);
+    const fullyPaid = list[idx].amountPaid >= list[idx].amount;
     write(KEYS.customerDebts, list);
     this.addCashTransaction({
       type: 'entrada',
@@ -459,6 +488,7 @@ export const store = {
       date: today(),
       relatedId: debtId,
     });
+    if (fullyPaid) this._markLinkedReminderDone('divida_cliente', debtId);
   },
   customerBalance(customerId) {
     return this.getCustomerDebts(customerId).reduce((s, d) => s + (d.amount - d.amountPaid), 0);
@@ -495,6 +525,17 @@ export const store = {
     };
     list.push(record);
     write(KEYS.supplierDebts, list);
+
+    if (record.dueDate) {
+      const supplier = this.getSuppliers().find((s) => s.id === supplierId);
+      this.addReminder({
+        title: `Pagar fornecedor ${supplier?.name || ''}`,
+        datetime: `${record.dueDate}T09:00`,
+        repeat: 'nenhuma',
+        relatedType: 'divida_fornecedor',
+        relatedId: record.id,
+      });
+    }
     return record;
   },
   registerSupplierPayment(debtId, amount) {
@@ -502,6 +543,7 @@ export const store = {
     const idx = list.findIndex((d) => d.id === debtId);
     if (idx < 0) return;
     list[idx].amountPaid += Number(amount);
+    const fullyPaid = list[idx].amountPaid >= list[idx].amount;
     write(KEYS.supplierDebts, list);
     this.addCashTransaction({
       type: 'saida',
@@ -511,6 +553,7 @@ export const store = {
       date: today(),
       relatedId: debtId,
     });
+    if (fullyPaid) this._markLinkedReminderDone('divida_fornecedor', debtId);
   },
   supplierBalance(supplierId) {
     return this.getSupplierDebts(supplierId).reduce((s, d) => s + (d.amount - d.amountPaid), 0);
@@ -538,6 +581,16 @@ export const store = {
   },
   deleteReminder(id) {
     write(KEYS.reminders, read(KEYS.reminders, []).filter((r) => r.id !== id));
+  },
+  // Quando uma dívida é totalmente paga, o lembrete de vencimento ligado a
+  // ela deixa de fazer sentido — marca-se automaticamente como concluído.
+  _markLinkedReminderDone(relatedType, relatedId) {
+    const list = read(KEYS.reminders, []);
+    const idx = list.findIndex((r) => r.relatedType === relatedType && r.relatedId === relatedId && !r.done);
+    if (idx >= 0) {
+      list[idx].done = true;
+      write(KEYS.reminders, list);
+    }
   },
 
   // ================= PATRIMÓNIO / RELATÓRIOS =================

@@ -76,6 +76,8 @@ create table if not exists purchase_sessions (
   transport_cost numeric default 0,
   food_cost numeric default 0,
   other_cost numeric default 0,
+  payment_method text default 'vista',
+  supplier_id text,
   created_at timestamptz default now()
 );
 

@@ -1,7 +1,21 @@
 import { useState } from 'react';
-import { CloudCheck, CloudOff, LogOut } from 'lucide-react';
+import { CloudCheck, CloudOff, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { pushToCloud, pullFromCloud } from '../lib/sync';
+import { pushToCloud, pullFromCloud, getSyncComparison, getLastSyncedAt } from '../lib/sync';
+
+const TABLE_LABELS = {
+  categories: 'Categorias',
+  products: 'Produtos',
+  batches: 'Lotes de stock',
+  purchaseSessions: 'Dias de compra',
+  sales: 'Vendas',
+  cashTransactions: 'Movimentos de caixa',
+  customers: 'Clientes',
+  customerDebts: 'Dívidas de clientes',
+  suppliers: 'Fornecedores',
+  supplierDebts: 'Dívidas a fornecedores',
+  reminders: 'Lembretes',
+};
 
 export default function Conta() {
   const { session, signUp, signIn, signOut, syncEnabled } = useAuth();
@@ -11,6 +25,8 @@ export default function Conta() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [comparison, setComparison] = useState(null);
+  const [checking, setChecking] = useState(false);
 
   if (!syncEnabled) {
     return (
@@ -35,6 +51,7 @@ export default function Conta() {
       } else {
         await signUp(email, password);
       }
+      await pushToCloud();
       await pullFromCloud();
     } catch (e) {
       setError(e.message || 'Algo correu mal.');
@@ -46,22 +63,37 @@ export default function Conta() {
   async function handleSyncNow() {
     setBusy(true);
     setStatus('A sincronizar...');
+    setComparison(null);
     await pushToCloud();
     await pullFromCloud();
     setStatus('Sincronizado agora mesmo.');
     setBusy(false);
   }
 
+  async function handleCheck() {
+    setChecking(true);
+    const rows = await getSyncComparison();
+    setComparison(rows);
+    setChecking(false);
+  }
+
+  async function handleLogout() {
+    if (!confirm('Terminar sessão? Os dados continuam guardados neste aparelho, mas deixam de sincronizar até voltares a entrar.')) return;
+    await signOut();
+  }
+
   if (session) {
+    const last = getLastSyncedAt();
     return (
       <div className="px-5 pt-6 pb-28 max-w-md mx-auto">
         <h1 className="font-display text-2xl mb-5">Conta e sincronização</h1>
         <div className="bg-surface rounded-xl p-4 border border-line mb-4">
           <div className="flex items-center gap-2 mb-1">
             <CloudCheck size={16} className="text-income" />
-            <p className="text-sm font-medium text-income">Sincronização ativa</p>
+            <p className="text-sm font-medium text-income">Sessão ativa</p>
           </div>
           <p className="text-xs text-muted">{session.user.email}</p>
+          {last && <p className="text-[11px] text-muted mt-1">Última sincronização: {new Date(last).toLocaleTimeString('pt-AO')}</p>}
         </div>
 
         <button onClick={handleSyncNow} disabled={busy} className="w-full bg-gold text-night font-semibold py-3 rounded-xl text-sm mb-3 disabled:opacity-40">
@@ -69,7 +101,31 @@ export default function Conta() {
         </button>
         {status && <p className="text-xs text-muted text-center mb-3">{status}</p>}
 
-        <button onClick={signOut} className="w-full bg-surface-light border border-line text-cream text-sm py-3 rounded-xl flex items-center justify-center gap-2">
+        <button onClick={handleCheck} disabled={checking} className="w-full bg-surface-light border border-line text-cream text-sm py-3 rounded-xl mb-3 flex items-center justify-center gap-2 disabled:opacity-40">
+          <ShieldCheck size={15} /> {checking ? 'A verificar...' : 'Confirmar dados na base de dados'}
+        </button>
+
+        {comparison && (
+          <div className="bg-surface rounded-xl p-4 border border-line mb-4">
+            <p className="text-xs text-muted mb-3">Neste aparelho vs. guardado na nuvem:</p>
+            <div className="space-y-1.5">
+              {comparison.filter((r) => r.local > 0 || r.cloud > 0).map((r) => (
+                <div key={r.table} className="flex justify-between items-center text-xs">
+                  <span className="text-muted">{TABLE_LABELS[r.table] || r.table}</span>
+                  <span className="font-mono tabular" style={{ color: r.local === r.cloud ? '#3e9b7c' : '#e8664f' }}>
+                    {r.local} / {r.cloud === null ? '?' : r.cloud}
+                  </span>
+                </div>
+              ))}
+              {comparison.every((r) => r.local === 0 && r.cloud === 0) && (
+                <p className="text-xs text-muted">Ainda não há dados registados.</p>
+              )}
+            </div>
+            <p className="text-[10px] text-muted mt-3">Os dois números devem ser iguais (aparelho / nuvem). Se diferirem, toca "Sincronizar agora" e verifica de novo.</p>
+          </div>
+        )}
+
+        <button onClick={handleLogout} className="w-full bg-surface-light border border-line text-cream text-sm py-3 rounded-xl flex items-center justify-center gap-2">
           <LogOut size={15} /> Terminar sessão
         </button>
       </div>
@@ -102,6 +158,12 @@ export default function Conta() {
       <button onClick={handleSubmit} disabled={busy || !email || !password} className="w-full bg-gold text-night font-semibold py-3.5 rounded-xl text-sm disabled:opacity-40">
         {mode === 'login' ? 'Entrar' : 'Criar conta'}
       </button>
+
+      {mode === 'login' && (
+        <p className="text-[11px] text-muted mt-4 text-center">
+          Se já usaste esta conta noutro aparelho, os teus dados aparecem automaticamente depois de entrares.
+        </p>
+      )}
     </div>
   );
 }

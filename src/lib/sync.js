@@ -9,6 +9,11 @@
 
 import { supabase, isSyncEnabled } from './supabaseClient';
 
+let lastSyncedAt = null;
+export function getLastSyncedAt() {
+  return lastSyncedAt;
+}
+
 const LOCAL_KEYS = {
   business: 'kianda:business',
   categories: 'kianda:categories',
@@ -95,6 +100,8 @@ export async function pushToCloud() {
     if (error) console.error(`Erro ao sincronizar ${table}:`, error.message);
   }
 
+  lastSyncedAt = new Date().toISOString();
+  window.dispatchEvent(new CustomEvent('kianda:synced'));
   return { ok: true };
 }
 
@@ -134,6 +141,8 @@ export async function pullFromCloud() {
   }
 
   window.dispatchEvent(new CustomEvent('kianda:changed'));
+  lastSyncedAt = new Date().toISOString();
+  window.dispatchEvent(new CustomEvent('kianda:synced'));
   return { ok: true };
 }
 
@@ -144,4 +153,22 @@ export function scheduleSync() {
   debounceTimer = setTimeout(() => {
     pushToCloud().catch((e) => console.error('Sync automático falhou:', e));
   }, 4000);
+}
+
+// Confirmação visual: compara quantos registos existem localmente vs. na
+// nuvem, para o utilizador poder verificar com os próprios olhos que os
+// dados estão mesmo a ser guardados na base de dados.
+export async function getSyncComparison() {
+  if (!isSyncEnabled()) return null;
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) return null;
+
+  const rows = [];
+  for (const { local, table } of SIMPLE_TABLES) {
+    const localCount = readLocal(LOCAL_KEYS[local], []).length;
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true }).eq('user_id', userId);
+    rows.push({ table, local: localCount, cloud: error ? null : count ?? 0 });
+  }
+  return rows;
 }

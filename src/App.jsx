@@ -34,7 +34,7 @@ function AppShell() {
     content = subScreen === 'relatorios' ? <Relatorios />
       : subScreen === 'lembretes' ? <Lembretes />
       : <Conta />;
-  } else if (tab === 'caixa') content = <Caixa />;
+  } else if (tab === 'caixa') content = <Caixa onOpenAccount={() => { setTab('mais'); setSubScreen('conta'); }} />;
   else if (tab === 'stock') content = <Stock />;
   else if (tab === 'vendas') content = <Vendas />;
   else if (tab === 'dividas') content = <Dividas />;

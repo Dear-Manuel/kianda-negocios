@@ -106,14 +106,27 @@ export default function Onboarding({ onDone }) {
   }
 
   function finish() {
-    for (const c of categories) store.addCategory(c);
+    // Mapeia o id local de cada categoria para o id realmente gravado —
+    // se a categoria já existir (ex: veio de outro dispositivo via
+    // sincronização), addCategory devolve a existente com outro id, e os
+    // produtos têm de apontar para esse id real, não para o local.
+    const categoryIdMap = {};
+    for (const c of categories) {
+      const saved = store.addCategory(c);
+      categoryIdMap[c.id] = saved.id;
+    }
+    const remappedStockItems = stockItems.map((item) => ({
+      ...item,
+      categoryId: categoryIdMap[item.categoryId] ?? item.categoryId,
+    }));
+
     store.createBusiness({
       ownerName,
       businessName,
       sector,
       phone: phoneDigits ? formatPhoneDisplay(phoneDigits) : '',
       initialCash: cashValue,
-      initialStockItems: stockItems,
+      initialStockItems: remappedStockItems,
     });
     clearDraft();
     onDone();

@@ -4,6 +4,7 @@ import { store } from '../lib/store';
 import { formatKz } from '../lib/currency';
 import { useLiveVersion } from '../lib/useLiveVersion';
 import CashEntrySheet from '../components/CashEntrySheet';
+import SyncBadge from '../components/SyncBadge';
 
 const LABELS = {
   venda: 'Venda',
@@ -17,7 +18,7 @@ const LABELS = {
   outra_saida: 'Outra saída',
 };
 
-export default function Caixa() {
+export default function Caixa({ onOpenAccount }) {
   const version = useLiveVersion();
   const [showEntry, setShowEntry] = useState(false);
 
@@ -32,7 +33,12 @@ export default function Caixa() {
   return (
     <div className="px-5 pt-6 pb-28 max-w-md mx-auto">
       <p className="text-muted text-sm mb-1">{business?.businessName}</p>
-      <h1 className="font-display text-3xl mb-6">Caixa</h1>
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <h1 className="font-display text-3xl">Caixa</h1>
+      </div>
+      <div className="mb-6">
+        <SyncBadge onOpenAccount={onOpenAccount} />
+      </div>
 
       <div className="bg-surface rounded-2xl p-5 mb-4 border border-line">
         <p className="text-xs text-muted mb-1">Saldo disponível em caixa</p>

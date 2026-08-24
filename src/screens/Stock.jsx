@@ -19,12 +19,23 @@ export default function Stock() {
   const products = store.getProducts();
 
   const grouped = useMemo(() => {
-    return categories.map((c) => ({
+    const known = categories.map((c) => ({
       ...c,
       items: products
         .filter((p) => p.categoryId === c.id)
         .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) })),
     })).filter((c) => c.items.length > 0);
+
+    // Rede de segurança: produtos cuja categoria não existe (nunca deveria
+    // acontecer, mas se acontecer não devem desaparecer silenciosamente).
+    const knownIds = new Set(categories.map((c) => c.id));
+    const orphanItems = products
+      .filter((p) => !knownIds.has(p.categoryId))
+      .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) }));
+    if (orphanItems.length > 0) {
+      known.push({ id: '__sem_categoria__', name: 'Sem categoria', color: '#96a0c2', items: orphanItems });
+    }
+    return known;
   }, [categories, products, version]);
 
   const totalStockValue = store.totalStockValue();

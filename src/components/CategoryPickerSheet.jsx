@@ -2,14 +2,29 @@ import { useMemo, useState } from 'react';
 import { X, Search, Check } from 'lucide-react';
 import { store } from '../lib/store';
 
-export default function CategoryPickerSheet({ selectedId, onSelect, onClose, allowAll, allLabel }) {
+export default function CategoryPickerSheet({ selectedId, onSelect, onClose, allowAll, allLabel, allowCreate }) {
   const [query, setQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [error, setError] = useState('');
   const categories = store.getCategories();
 
   const filtered = useMemo(() => {
     if (!query.trim()) return categories;
     return categories.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
   }, [query, categories]);
+
+  function handleCreate() {
+    if (!newName.trim()) return;
+    const existing = store.findCategoryByName(newName);
+    if (existing) {
+      setError(`A categoria "${existing.name}" já existe.`);
+      onSelect(existing.id);
+      return;
+    }
+    const cat = store.addCategory({ name: newName });
+    onSelect(cat.id);
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end bg-black/50" onClick={onClose}>
@@ -30,7 +45,7 @@ export default function CategoryPickerSheet({ selectedId, onSelect, onClose, all
           />
         </div>
 
-        <div className="overflow-y-auto space-y-1.5">
+        <div className="overflow-y-auto space-y-1.5 mb-3">
           {allowAll && !query.trim() && (
             <button
               onClick={() => onSelect(null)}
@@ -58,6 +73,27 @@ export default function CategoryPickerSheet({ selectedId, onSelect, onClose, all
             </button>
           ))}
         </div>
+
+        {allowCreate && (
+          creating ? (
+            <div className="flex gap-2 pt-3 border-t border-line">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => { setNewName(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                placeholder="Nome da nova categoria"
+                className="flex-1 bg-surface-light rounded-lg px-3 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              />
+              <button onClick={handleCreate} className="bg-gold text-night px-3.5 rounded-lg text-xs font-medium">Criar</button>
+            </div>
+          ) : (
+            <button onClick={() => setCreating(true)} className="text-sm text-gold pt-3 border-t border-line text-left">
+              + Nova categoria
+            </button>
+          )
+        )}
+        {error && <p className="text-xs text-expense mt-2">{error}</p>}
       </div>
     </div>
   );

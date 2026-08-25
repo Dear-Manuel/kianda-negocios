@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Package, PackagePlus } from 'lucide-react';
+import { AlertTriangle, Package, PackagePlus, Search, ChevronDown, X } from 'lucide-react';
 import { store } from '../lib/store';
 import { formatKz } from '../lib/currency';
 import { useLiveVersion } from '../lib/useLiveVersion';
@@ -7,6 +7,7 @@ import ProductFormSheet from '../components/ProductFormSheet';
 import PurchaseSessionSheet from '../components/PurchaseSessionSheet';
 import StockMovementSheet from '../components/StockMovementSheet';
 import StockHistorySheet from '../components/StockHistorySheet';
+import CategoryPickerSheet from '../components/CategoryPickerSheet';
 
 export default function Stock() {
   const version = useLiveVersion();
@@ -18,28 +19,40 @@ export default function Stock() {
   const [showCatInput, setShowCatInput] = useState(false);
   const [catError, setCatError] = useState('');
 
+  const [search, setSearch] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState(null);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+
   const categories = store.getCategories();
   const products = store.getProducts();
 
   const grouped = useMemo(() => {
-    const known = categories.map((c) => ({
+    const q = search.trim().toLowerCase();
+    const relevantCategories = filterCategoryId ? categories.filter((c) => c.id === filterCategoryId) : categories;
+
+    const known = relevantCategories.map((c) => ({
       ...c,
       items: products
-        .filter((p) => p.categoryId === c.id)
+        .filter((p) => p.categoryId === c.id && (!q || p.name.toLowerCase().includes(q)))
         .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) })),
     })).filter((c) => c.items.length > 0);
 
-    const knownIds = new Set(categories.map((c) => c.id));
-    const orphanItems = products
-      .filter((p) => !knownIds.has(p.categoryId))
-      .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) }));
-    if (orphanItems.length > 0) {
-      known.push({ id: '__sem_categoria__', name: 'Sem categoria', color: '#96a0c2', items: orphanItems });
+    if (!filterCategoryId) {
+      const knownIds = new Set(categories.map((c) => c.id));
+      const orphanItems = products
+        .filter((p) => !knownIds.has(p.categoryId) && (!q || p.name.toLowerCase().includes(q)))
+        .map((p) => ({ ...p, stock: store.stockOf(p.id), stockValue: store.stockValueOf(p.id) }));
+      if (orphanItems.length > 0) {
+        known.push({ id: '__sem_categoria__', name: 'Sem categoria', color: '#96a0c2', items: orphanItems });
+      }
     }
     return known;
-  }, [categories, products, version]);
+  }, [categories, products, version, search, filterCategoryId]);
 
   const totalStockValue = store.totalStockValue();
+  const activeFilterCategory = categories.find((c) => c.id === filterCategoryId);
+  const totalProducts = products.length;
+  const visibleProducts = grouped.reduce((s, c) => s + c.items.length, 0);
 
   function addCategory() {
     if (!newCategory.trim()) return;
@@ -61,7 +74,7 @@ export default function Stock() {
       </div>
       <p className="text-sm text-muted mb-5">Valor total em stock: <span className="font-mono tabular text-gold">{formatKz(totalStockValue)}</span></p>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-4">
         <button onClick={() => setShowPurchase(true)} className="flex-1 bg-gold text-night text-xs font-semibold py-2.5 rounded-xl">
           + Dia de compra
         </button>
@@ -69,6 +82,40 @@ export default function Stock() {
           + Novo produto
         </button>
       </div>
+
+      {/* Pesquisa geral + filtro por categoria */}
+      <div className="flex gap-2 mb-2">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Pesquisar produto..."
+            className="w-full bg-surface-light rounded-xl pl-10 pr-8 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => setShowFilterPicker(true)}
+          className="flex items-center gap-1.5 px-3 rounded-xl text-xs shrink-0 border"
+          style={{
+            borderColor: activeFilterCategory ? activeFilterCategory.color : '#2c3a63',
+            background: activeFilterCategory ? `${activeFilterCategory.color}22` : '#182545',
+            color: activeFilterCategory ? activeFilterCategory.color : '#96a0c2',
+          }}
+        >
+          {activeFilterCategory ? activeFilterCategory.name : 'Categoria'} <ChevronDown size={13} />
+        </button>
+      </div>
+
+      {(search || filterCategoryId) && (
+        <p className="text-xs text-muted mb-3">{visibleProducts} de {totalProducts} produto{totalProducts !== 1 ? 's' : ''}</p>
+      )}
+      {!search && !filterCategoryId && <div className="mb-5" />}
 
       {showCatInput ? (
         <div className="mb-5">
@@ -89,8 +136,11 @@ export default function Stock() {
         <button onClick={() => setShowCatInput(true)} className="text-xs text-gold mb-5">+ Nova categoria</button>
       )}
 
-      {grouped.length === 0 && (
+      {grouped.length === 0 && totalProducts === 0 && (
         <p className="text-sm text-muted py-12 text-center">Ainda não tens produtos. Cria uma categoria e depois toca em "Novo produto" para começar.</p>
+      )}
+      {grouped.length === 0 && totalProducts > 0 && (
+        <p className="text-sm text-muted py-12 text-center">Nenhum produto encontrado{search ? ` para "${search}"` : ''}{activeFilterCategory ? ` em ${activeFilterCategory.name}` : ''}.</p>
       )}
 
       {grouped.map((cat) => (
@@ -98,6 +148,7 @@ export default function Stock() {
           <div className="flex items-center gap-2 mb-2.5">
             <span className="w-2 h-2 rounded-full" style={{ background: cat.color }} />
             <h2 className="text-sm font-medium">{cat.name}</h2>
+            <span className="text-xs text-muted">({cat.items.length})</span>
           </div>
           <div className="space-y-2">
             {cat.items.map((p) => {
@@ -110,7 +161,7 @@ export default function Stock() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{p.name}</p>
-                      <p className="text-xs text-muted">{formatKz(p.salePrice)} / {p.unit}</p>
+                      <p className="text-xs text-muted">{p.salePrice > 0 ? `${formatKz(p.salePrice)} / ${p.unit}` : 'Preço por definir'}</p>
                     </div>
                   </button>
                   <div className="flex items-center gap-2 shrink-0">
@@ -150,6 +201,15 @@ export default function Stock() {
       )}
       {historyProduct && (
         <StockHistorySheet product={historyProduct} onClose={() => setHistoryProduct(null)} />
+      )}
+      {showFilterPicker && (
+        <CategoryPickerSheet
+          selectedId={filterCategoryId}
+          allowAll
+          allLabel="Todas as categorias"
+          onSelect={(id) => { setFilterCategoryId(id); setShowFilterPicker(false); }}
+          onClose={() => setShowFilterPicker(false)}
+        />
       )}
     </div>
   );

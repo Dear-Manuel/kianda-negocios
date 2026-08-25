@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, Search, Check } from 'lucide-react';
 import { store } from '../lib/store';
 
-export default function CategoryPickerSheet({ selectedId, onSelect, onClose }) {
+export default function CategoryPickerSheet({ selectedId, onSelect, onClose, allowAll, allLabel }) {
   const [query, setQuery] = useState('');
   const categories = store.getCategories();
 
@@ -31,6 +31,17 @@ export default function CategoryPickerSheet({ selectedId, onSelect, onClose }) {
         </div>
 
         <div className="overflow-y-auto space-y-1.5">
+          {allowAll && !query.trim() && (
+            <button
+              onClick={() => onSelect(null)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left"
+              style={{ background: !selectedId ? '#d4a24c22' : 'transparent' }}
+            >
+              <span className="w-3 h-3 rounded-full shrink-0 border border-muted" />
+              <span className="text-sm flex-1">{allLabel || 'Todas as categorias'}</span>
+              {!selectedId && <Check size={16} color="#d4a24c" />}
+            </button>
+          )}
           {filtered.length === 0 && (
             <p className="text-sm text-muted text-center py-6">Nenhuma categoria encontrada.</p>
           )}
